@@ -169,17 +169,59 @@ def execute(dry_run: bool = False) -> list:
 
 
 def close_all(dry_run: bool = False) -> None:
-    """Schließt alle offenen Day-Trade Positionen vor Marktschluss."""
+    """Schließt alle Aktien- und ETF-Positionen vor Marktschluss; Krypto bleibt offen."""
     client    = TradingClient(API_KEY, SECRET_KEY, paper=True)
     positions = client.get_all_positions()
     if not positions:
         print("[executor] Keine offenen Positionen zum Schließen.")
         return
-    if dry_run:
-        print(f"[executor] dry_run: würde {len(positions)} Positionen schließen")
+
+    equity_pos = [p for p in positions if str(p.asset_class).lower() != "crypto"]
+    crypto_pos = [p for p in positions if str(p.asset_class).lower() == "crypto"]
+
+    print(f"[executor] Positionen gesamt: {len(positions)} "
+          f"(Aktien/ETFs: {len(equity_pos)}, Krypto offen: {len(crypto_pos)})")
+
+    if not equity_pos:
+        print("[executor] Keine Aktien-/ETF-Positionen zum Schließen.")
         return
-    client.close_all_positions(cancel_orders=True)
-    print(f"[executor] {len(positions)} Positionen geschlossen.")
+
+    if dry_run:
+        for p in equity_pos:
+            print(f"  dry_run: würde {p.symbol} schließen "
+                  f"(unreal. P&L: ${float(p.unrealized_pl):+.2f})")
+        return
+
+    total_pnl = 0.0
+    closed    = 0
+    print("\n--- Positionen schließen ---")
+    for p in equity_pos:
+        symbol  = p.symbol
+        qty     = float(p.qty)
+        avg_in  = float(p.avg_entry_price)
+        cur     = float(p.current_price)
+        pnl     = float(p.unrealized_pl)
+        pnl_pct = float(p.unrealized_plpc) * 100
+        try:
+            client.close_position(symbol, ClosePositionRequest(percentage="100"))
+            print(f"  GESCHLOSSEN {symbol:6s}  Qty: {qty:8.4f}  "
+                  f"Avg-In: ${avg_in:9.2f}  Kurs: ${cur:9.2f}  "
+                  f"P&L: ${pnl:+8.2f}  ({pnl_pct:+.2f}%)")
+            total_pnl += pnl
+            closed += 1
+        except Exception as exc:
+            print(f"  FEHLER    {symbol:6s}: {exc}")
+
+    account = client.get_account()
+    equity  = float(account.equity)
+    cash    = float(account.cash)
+
+    print(f"\n--- Abschluss-Bericht ---")
+    print(f"  Geschlossen:        {closed}/{len(equity_pos)} Positionen")
+    print(f"  Krypto offen:       {len(crypto_pos)} Positionen")
+    print(f"  Gesamt P&L (heute): ${total_pnl:+.2f}")
+    print(f"  Equity (Konto):     ${equity:,.2f}")
+    print(f"  Verfügbares Cash:   ${cash:,.2f}")
 
 
 if __name__ == "__main__":

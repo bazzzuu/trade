@@ -68,17 +68,28 @@ def _place_buy(client: TradingClient, decision: dict, account: dict, dry_run: bo
         }
 
     try:
-        order = client.submit_order(
-            MarketOrderRequest(
-                symbol=_alpaca_symbol(symbol),
-                qty=qty,
-                side=OrderSide.BUY,
-                time_in_force=tif,
-                order_class=OrderClass.BRACKET,
-                take_profit=TakeProfitRequest(limit_price=limit_price),
-                stop_loss=StopLossRequest(stop_price=stop_price),
+        if sym_type == "crypto":
+            # Alpaca doesn't support bracket orders for crypto
+            order = client.submit_order(
+                MarketOrderRequest(
+                    symbol=_alpaca_symbol(symbol),
+                    qty=qty,
+                    side=OrderSide.BUY,
+                    time_in_force=tif,
+                )
             )
-        )
+        else:
+            order = client.submit_order(
+                MarketOrderRequest(
+                    symbol=_alpaca_symbol(symbol),
+                    qty=qty,
+                    side=OrderSide.BUY,
+                    time_in_force=tif,
+                    order_class=OrderClass.BRACKET,
+                    take_profit=TakeProfitRequest(limit_price=limit_price),
+                    stop_loss=StopLossRequest(stop_price=stop_price),
+                )
+            )
         return {"status": "submitted", "order_id": str(order.id), "qty": qty}
     except Exception as exc:
         return {"status": "error", "reason": str(exc)}
